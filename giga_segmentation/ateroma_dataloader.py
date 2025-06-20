@@ -1,0 +1,138 @@
+import os
+from PIL import Image
+import torch.utils.data as data
+import torchvision.transforms as transforms
+import numpy as np
+import random
+import torch
+import albumentations as A
+from albumentations.pytorch import transforms as A_torch
+
+from torch.utils.data import Dataset
+import glob as glob
+
+class AteromaDataset(data.Dataset):
+    """
+    dataloader for polyp segmentation tasks
+    """
+    def __init__(self, image_root, gt_root, trainsize, augmentations):
+        self.trainsize = trainsize
+        self.augmentations = augmentations
+        print(self.augmentations)
+        self.images = [image_root + f for f in os.listdir(image_root) if f.endswith('.jpg') or f.endswith('.png')]
+        self.masks = [gt_root + f for f in os.listdir(gt_root) if f.endswith('.png')]
+        self.images = sorted(self.images)
+        self.masks = sorted(self.masks)
+        self.filter_files()
+        self.size = len(self.images)
+        if self.augmentations == True:
+            print('Using RandomRotation, RandomFlip')
+            self.transform = A.Compose
+            ([
+                A.RandomBrightnessContrast(brightness_limit=0.5, contrast_limit=0.2, p=0.2),
+                A.ElasticTransform(alpha=50, p=0.2),
+                A.ShiftScaleRotate(scale_limit=(0.2,0.2), rotate_limit=15, p=0.2),
+                A.HorizontalFlip(p=0.5),
+                A.Resize(height = self.trainsize, width = self.trainsize),
+                A_torch.ToTensorV2(),
+                A.Normalize()
+            ])
+        else:
+            print('no augmentation')
+            self.transform = transforms.Compose
+            ([
+                transforms.Resize((self.trainsize, self.trainsize)),
+                transforms.ToTensor(),
+                transforms.Normalize()
+            ])
+            
+            self.gt_transform = transforms.Compose([
+                transforms.Resize((self.trainsize, self.trainsize)),
+                transforms.ToTensor()])
+
+    def __getitem__(self, index):
+        image = self.binary_loader(self.images[index])
+        mask = self.binary_loader(self.masks[index])
+        
+        seed = np.random.randint(2147483647) # make a seed with numpy generator 
+        random.seed(seed) # apply this seed to img tranfsorms
+        torch.manual_seed(seed) # needed for torchvision 0.7
+        
+        if self.transform is not None:
+            augmentations = self.transform(image=image, mask=mask)
+            image = augmentations["image"]
+            mask = augmentations["mask"]
+    
+        return image, mask
+
+    def filter_files(self):
+        assert len(self.images) == len(self.masks)
+        images = []
+        gts = []
+        for img_path, gt_path in zip(self.images, self.masks):
+            img = Image.open(img_path)
+            gt = Image.open(gt_path)
+            if img.size == gt.size:
+                images.append(img_path)
+                gts.append(gt_path)
+        self.images = images
+        self.masks = gts
+
+    def binary_loader(self, path):
+        with open(path, 'rb') as f:
+            img = Image.open(f)
+            # return img.convert('1')
+            return img.convert('L')
+
+    def resize(self, img, gt):
+        assert img.size == gt.size
+        w, h = img.size
+        if h < self.trainsize or w < self.trainsize:
+            h = max(h, self.trainsize)
+            w = max(w, self.trainsize)
+            return img.resize((w, h), Image.BILINEAR), gt.resize((w, h), Image.NEAREST)
+        else:
+            return img, gt
+
+    def __len__(self):
+        return self.size
+
+class Ateroma_test_dataset:
+    def __init__(self, image_root, gt_root, testsize):
+        self.testsize = testsize
+        self.images = [image_root + f for f in os.listdir(image_root) if f.endswith('.jpg') or f.endswith('.png')]
+        self.gts = [gt_root + f for f in os.listdir(gt_root) if f.endswith('.tif') or f.endswith('.png')]
+        self.images = sorted(self.images)
+        self.gts = sorted(self.gts)
+        self.transform = transforms.Compose([
+            transforms.Resize((self.testsize, self.testsize)),
+            transforms.ToTensor(),
+            transforms.Normalize([0.5],
+                                 [0.5])])
+        self.gt_transform = transforms.ToTensor()
+        self.size = len(self.images)
+        self.index = 0
+
+    def load_data(self):
+        image = self.binary_loader(self.images[self.index])
+        image = self.transform(image).unsqueeze(0)
+        gt = self.binary_loader(self.gts[self.index])
+        name = self.images[self.index].split('/')[-1]
+        if name.endswith('.jpg'):
+            name = name.split('.jpg')[0] + '.png'
+        self.index += 1
+        return image, gt, name
+
+    def binary_loader(self, path):
+        with open(path, 'rb') as f:
+            img = Image.open(f)
+            return img.convert('L')
+        
+def get_loader(image_root, gt_root, batchsize, trainsize, shuffle=True, num_workers=4, pin_memory=True, augmentation=False):
+    dataset = AteromaDataset(image_root, gt_root, trainsize, augmentation)
+    data_loader = data.DataLoader(dataset=dataset,
+                                  batch_size=batchsize,
+                                  shuffle=shuffle,
+                                  num_workers=num_workers,
+                                  pin_memory=pin_memory)
+    return data_loader
