@@ -2,6 +2,8 @@
 
 **This project is a key component of GigaSistêmica, a collaborative initiative between GigaCandanga and the University of Brasília. GigaSistêmica aims to revolutionize diagnostic and predictive capabilities for systemic diseases through the integration of AI and medical imaging technologies.**
 
+🔗 **Main Project Repository**: [GigaSistêmica – Advancing Systemic Health Diagnostics through AI](https://github.com/BrunoScholles98/GigaSistemica-Advancing-Systemic-Health-Diagnostics-through-AI)
+
 ## Overview
 
 GigaXReport is an advanced diagnostic framework that leverages Specialized Language Models (SLMs) to provide comprehensive, multimodal analysis of medical images. By combining state-of-the-art deep learning models for image classification, segmentation, and detection with powerful language models tailored for medical applications, GigaXReport delivers detailed, explainable, and clinically relevant reports.
