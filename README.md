@@ -8,6 +8,8 @@ GigaXReport is an advanced diagnostic framework that leverages Specialized Langu
 
 This framework is designed to support healthcare professionals in diagnosing and predicting systemic diseases, with a particular focus on bone health and atheroma detection. The integration of SLMs enables the system to generate expert-level textual descriptions and insights based on both image data and AI-driven predictions.
 
+![](https://raw.githubusercontent.com/BrunoScholles98/GigaXReport-A-Multimodal-Diagnostic-Framework-with-Specialized-Language-Models-SLMs/refs/heads/main/static/MainPage_Example.png)
+
 ## Key Features
 
 - **Multimodal Analysis:** Integrates image-based deep learning models (e.g., EfficientNet, UNet) with specialized language models for text generation and explanation.
