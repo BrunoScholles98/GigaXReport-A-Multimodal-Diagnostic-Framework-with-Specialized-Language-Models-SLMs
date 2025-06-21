@@ -1,4 +1,4 @@
-# GigaXReport: A Multimodal Diagnostic Framework with Specialized Language Models (SLMs)
+![image](https://github.com/user-attachments/assets/f95b5ff5-5441-419f-bd85-dd8b623b624d)# GigaXReport: A Multimodal Diagnostic Framework with Specialized Language Models (SLMs)
 
 **This project is a key component of GigaSistêmica, a collaborative initiative between GigaCandanga and the University of Brasília. GigaSistêmica aims to revolutionize diagnostic and predictive capabilities for systemic diseases through the integration of AI and medical imaging technologies.**
 
@@ -7,6 +7,8 @@
 GigaXReport is an advanced diagnostic framework that leverages Specialized Language Models (SLMs) to provide comprehensive, multimodal analysis of medical images. By combining state-of-the-art deep learning models for image classification, segmentation, and detection with powerful language models tailored for medical applications, GigaXReport delivers detailed, explainable, and clinically relevant reports.
 
 This framework is designed to support healthcare professionals in diagnosing and predicting systemic diseases, with a particular focus on bone health and atheroma detection. The integration of SLMs enables the system to generate expert-level textual descriptions and insights based on both image data and AI-driven predictions.
+
+![](https://raw.githubusercontent.com/BrunoScholles98/GigaXReport-A-Multimodal-Diagnostic-Framework-with-Specialized-Language-Models-SLMs/refs/heads/main/static/MainPage_Example.png)
 
 ## Key Features
 
