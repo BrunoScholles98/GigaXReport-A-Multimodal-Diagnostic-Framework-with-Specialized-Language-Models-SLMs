@@ -84,8 +84,7 @@ For advanced users, individual model components can be accessed through dedicate
 <a name="model-access"></a>
 ## Model Access
 
-The trained AI models used in this framework (e.g., MedGemma, EfficientNet, FastViT, DC-UNet) are **available upon request**.  
-If you are a researcher, clinician, or developer interested in accessing the model weights, please contact the development team using the information below.
+The trained AI models used in this framework (e.g., MedGemma, EfficientNet, FastViT, DC-UNet) are **available upon request**. If you are a researcher, clinician, or developer interested in accessing the model weights, please contact the development team using the information below.
 
 ---
 
