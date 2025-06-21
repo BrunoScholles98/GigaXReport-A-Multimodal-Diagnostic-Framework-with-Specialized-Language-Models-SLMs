@@ -283,7 +283,7 @@ HTML = '''
       background: #121212;
       color: #e0e0e0;
     }
-    textarea,input[type=file]{
+    textarea,input[type=file],select{
       width:100%; margin-bottom:1rem;
       background:#1e1e1e; color:#e0e0e0; border:1px solid #333; padding:.5rem;
     }
@@ -298,6 +298,8 @@ HTML = '''
     footer{font-size:.85rem; color:#999; border-top:1px solid #333;
       margin-top:2rem; padding-top:1rem;}
     a{color:#90cdf4;} a:hover{color:#63b3ed;}
+    .form-group{margin-bottom:1rem;}
+    label{display:block; margin-bottom:0.5rem; font-weight:bold;}
   </style>
 </head>
 <body>
@@ -305,10 +307,21 @@ HTML = '''
        style="max-width:200px; display:block; margin:0 auto 1rem;">
   <h1>GigaXReport</h1>
   <form method="post" enctype="multipart/form-data">
-    <label>Prompt:</label>
-    <textarea name="prompt" rows="3" required></textarea>
-    <label>X-ray Image:</label>
-    <input type="file" name="image" accept="image/*" required>
+    <div class="form-group">
+      <label>Language / Idioma:</label>
+      <select name="language" required>
+        <option value="english" {{ "selected" if language == "english" else "" }}>English</option>
+        <option value="portuguese" {{ "selected" if language == "portuguese" else "" }}>Português</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Prompt:</label>
+      <textarea name="prompt" rows="3" required></textarea>
+    </div>
+    <div class="form-group">
+      <label>X-ray Image:</label>
+      <input type="file" name="image" accept="image/*" required>
+    </div>
     <button type="submit">Submit</button>
   </form>
 
@@ -343,8 +356,10 @@ def index():
     result = None
     plot_url = None
     pdf_ready = False
+    language = 'english'  # Default language
 
     if request.method == 'POST':
+        language = request.form.get('language', 'english')
         prompt = request.form.get('prompt','').strip()
         f      = request.files.get('image')
         if prompt and f:
@@ -454,23 +469,43 @@ def index():
             # Prepare the combined image for MedGemma
             combined_pil = Image.open(BytesIO(combined_data)).convert('RGB')
             
-            # Create system prompt that includes results from other models
-            sys_txt = ("You are an expert radiologist. "
-                      "The diagnosis from the EfficientNet osteoporosis model is exactly "
-                      f"\"{osteoporosis_diag}\", and the diagnosis from the atheroma pipeline is exactly "
-                      f"\"{pred_ath}\". These model outputs must appear verbatim in your report under "
-                      "the sections \"Bone Health\" and \"Atheroma Diagnosis\". You must explain why these "
-                      "classifications might have occurred, based on common radiological indicators. "
-                      "Top row of the image: left = original, right = grad-cam overlay just for osteoporosis. "
-                      "Bottom row: segmentation/detection just for atheromas (if available). "
-                      "If the atheroma classification is positive but no detection/segmentation was possible, "
-                      "make clear that the model classified it as such but was unable to localize any plaque. "
-                      "Your response should cover: General Impression, Bone Structure, Bone Health, "
-                      "Atheroma Diagnosis, Atheroma Detection/Segmentation and Summary. Be detailed, medically sound, "
-                      "and describe the input image. Don't forget to describe the detection/segmentation in the image (if it has)."
-                      "Do not put Patient, Date, Exam or similar in your response."
-                      "Do not talk about the teeth in your response."
-            )
+            # Define system text based on selected language
+            if language == 'portuguese':
+                sys_txt = ("Você é um radiologista especialista. "
+                          "O diagnóstico do modelo EfficientNet para osteoporose é exatamente "
+                          f"\"{osteoporosis_diag}\", e o diagnóstico do pipeline de ateroma é exatamente "
+                          f"\"{pred_ath}\". Essas saídas dos modelos devem aparecer literalmente no seu relatório nas "
+                          "seções \"Saúde Óssea\" e \"Diagnóstico de Ateroma\". Você deve explicar por que essas "
+                          "classificações podem ter ocorrido, baseado em indicadores radiológicos comuns. "
+                          "Linha superior da imagem: esquerda = original, direita = sobreposição grad-cam apenas para osteoporose. "
+                          "Linha inferior: segmentação/detecção apenas para ateromas (se disponível). "
+                          "Se a classificação de ateroma for positiva mas nenhuma detecção/segmentação foi possível, "
+                          "deixe claro que o modelo classificou como tal mas não foi capaz de localizar nenhuma placa. "
+                          "Sua resposta deve cobrir: Impressão Geral, Estrutura Óssea, Saúde Óssea, "
+                          "Diagnóstico de Ateroma, Detecção/Segmentação de Ateroma e Resumo. Seja detalhado, medicamente correto, "
+                          "e descreva a imagem de entrada. Não se esqueça de descrever a detecção/segmentação na imagem (se houver)."
+                          "Não coloque Paciente, Data, Exame ou similar na sua resposta."
+                          "Não fale sobre os dentes na sua resposta. Além disso, você deve obedecer ao que o usuário pede."
+                          "Se eles pedirem um relatório em um idioma específico ou em um formato específico, você deve responder nesse idioma ou formato."
+                )
+            else:  # English (default)
+                sys_txt = ("You are an expert radiologist. "
+                          "The diagnosis from the EfficientNet osteoporosis model is exactly "
+                          f"\"{osteoporosis_diag}\", and the diagnosis from the atheroma pipeline is exactly "
+                          f"\"{pred_ath}\". These model outputs must appear verbatim in your report under "
+                          "the sections \"Bone Health\" and \"Atheroma Diagnosis\". You must explain why these "
+                          "classifications might have occurred, based on common radiological indicators. "
+                          "Top row of the image: left = original, right = grad-cam overlay just for osteoporosis. "
+                          "Bottom row: segmentation/detection just for atheromas (if available). "
+                          "If the atheroma classification is positive but no detection/segmentation was possible, "
+                          "make clear that the model classified it as such but was unable to localize any plaque. "
+                          "Your response should cover: General Impression, Bone Structure, Bone Health, "
+                          "Atheroma Diagnosis, Atheroma Detection/Segmentation and Summary. Be detailed, medically sound, "
+                          "and describe the input image. Don't forget to describe the detection/segmentation in the image (if it has)."
+                          "Do not put Patient, Date, Exam or similar in your response."
+                          "Do not talk about the teeth in your response. Also, you must obay what the user asks for."
+                          "If they ask for a report in a specific language or in a specific format, you must respond in that language or format."
+                )
             
             # Prepare messages for MedGemma
             msgs = [
@@ -565,7 +600,8 @@ def index():
         logo=LOGO_FILENAME,
         plot_url=plot_url,
         result=result,
-        pdf_ready=pdf_ready
+        pdf_ready=pdf_ready,
+        language=language
     )
 
 @app.route('/download')
