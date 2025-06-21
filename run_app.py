@@ -152,7 +152,7 @@ def predict_detection_model(session, input_name, image_path,
     return postproc(boxes, scores, labels_out, orig_shape, input_size)
 
 def load_segmentation_model(path=ATHEROMA_SEGMENTATION_PATH):
-    from giga_segmentation import DC_UNet
+    from utils import DC_UNet
     mdl = DC_UNet.DC_Unet(1).to(device)
     ckpt = torch.load(path, map_location=device)
     mdl.load_state_dict(ckpt['state_dict'])
@@ -445,7 +445,7 @@ def index():
                         tw = stringWidth(tok, font, 8)
                         if curr_w + tw > 500 and tok.strip():
                             txt.textLine(''); curr_w = 0
-                        txt.setFont(font, 10)
+                        txt.setFont(font, 8)
                         txt.textOut(tok)
                         curr_w += tw
                 txt.textLine('')
