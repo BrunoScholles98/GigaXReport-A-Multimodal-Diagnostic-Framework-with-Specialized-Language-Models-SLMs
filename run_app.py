@@ -2,7 +2,9 @@ import os
 import re
 import json
 import base64
+import tempfile
 from io import BytesIO
+import logging
 
 import numpy as np
 import cv2
@@ -23,10 +25,12 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from transformers import AutoProcessor, AutoModelForImageTextToText
 from cv2_rolling_ball import subtract_background_rolling_ball
 import timm.models.fastvit as fv
+from functools import lru_cache
 
 # Fix for FastViT compatibility - some versions don't have the 'se' attribute
+# mypy/pylance may complain about dynamic attribute creation; suppress type warning.
 if not hasattr(fv.ReparamLargeKernelConv, 'se'):
-    fv.ReparamLargeKernelConv.se = torch.nn.Identity()
+    setattr(fv.ReparamLargeKernelConv, 'se', torch.nn.Identity())  # type: ignore[attr-defined]
 
 # Disable PyTorch's dynamic compilation to avoid compatibility issues
 os.environ["TORCHDYNAMO_DISABLE"] = "1"
@@ -51,37 +55,71 @@ PDF_LOGO_FILENAME = 'giga_logo_pdf.png'
 # ---------------- Device Setup ----------------
 # Use GPU if available, otherwise fall back to CPU
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-torch._dynamo.disable()
+# torch._dynamo is optional and internal; wrap to avoid runtime errors with older versions
+try:
+    torch._dynamo.disable()  # type: ignore[attr-defined]
+except (AttributeError, ImportError):
+    pass  # Safe fallback for environments without torch._dynamo
 
-# ---------------- Osteoporosis Model Setup ----------------
+# ---------------- Osteoporosis Model Setup (lazy) ----------------
 # Extract the model name from the path (e.g., 'efficientnet-b7')
 match = re.search(r'efficientnet-(b\d)', OSTEO_MODEL_PATH)
 MODEL_NAME = 'efficientnet-' + match.group(1) if match else None
 # Image resize dimensions for the model input
 RESIZE = (449, 954)
 
-# Load the pre-trained EfficientNet model and set it to evaluation mode
-model_eff = EfficientNet.from_pretrained(MODEL_NAME, OSTEO_MODEL_PATH).to(device).eval()
-# Freeze all parameters to prevent training during inference
-for p in model_eff.parameters():
-    p.requires_grad = False
+# ---------------- Logging Setup ----------------
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
-# Standard ImageNet normalization for input preprocessing
-normalize_transform = transforms.Normalize(
-    mean=[0.485, 0.456, 0.406],
-    std=[0.229, 0.224, 0.225]
-)
-# Inverse normalization for visualization
-inv_normalize_transform = transforms.Normalize(
-    mean=[-0.485/0.229, -0.456/0.224, -0.406/0.255],
-    std=[1/0.229, 1/0.224, 1/0.255]
-)
-# Complete transformation pipeline for input images
-transform = transforms.Compose([
-    transforms.Resize(RESIZE),
-    transforms.ToTensor(),
-    normalize_transform
-])
+# Lazy singleton loaders ------------------------------------------------
+
+@lru_cache(maxsize=1)
+def get_osteoporosis_model():
+    """Load EfficientNet model on first use."""
+    logger.info("Loading EfficientNet model for osteoporosis analysis ...")
+    if MODEL_NAME is None:
+        raise RuntimeError("Could not infer EfficientNet model name from OSTEO_MODEL_PATH")
+    mdl = EfficientNet.from_pretrained(MODEL_NAME, OSTEO_MODEL_PATH).to(device).eval()
+    for p in mdl.parameters():
+        p.requires_grad = False
+    logger.info("EfficientNet model loaded and ready.")
+    return mdl
+
+@lru_cache(maxsize=1)
+def get_med_model():
+    """Load MedGemma model on first use."""
+    logger.info("Loading MedGemma vision-language model ...")
+    return AutoModelForImageTextToText.from_pretrained(
+        MEDGEMMA_MODEL_ID, cache_dir=CACHE_DIR, torch_dtype=torch.bfloat16
+    ).to(device)
+
+@lru_cache(maxsize=1)
+def get_med_processor():
+    """Load MedGemma processor on first use."""
+    logger.info("Loading MedGemma processor ...")
+    return AutoProcessor.from_pretrained(MEDGEMMA_MODEL_ID, cache_dir=CACHE_DIR)
+
+# Atheroma models -------------------------------------------------------
+
+@lru_cache(maxsize=1)
+def get_atheroma_classifier():
+    logger.info("Loading FastViT classifier for atheroma detection ...")
+    return load_classifier_model()
+
+@lru_cache(maxsize=1)
+def get_detection_models():
+    logger.info("Loading Faster R-CNN ONNX session for atheroma localization ...")
+    return load_detection_model()  # returns (session, input_name)
+
+@lru_cache(maxsize=1)
+def get_segmentation_model():
+    logger.info("Loading DC-UNet model for atheroma segmentation ...")
+    return load_segmentation_model()
 
 # Mapping from model predictions to human-readable diagnoses
 diag_sentences = {0: 'the patient is healthy', 1: 'the patient has osteoporosis'}
@@ -104,10 +142,11 @@ def compute_saliency(pil_img: Image.Image):
     when making osteoporosis predictions.
     """
     # Prepare input tensor and enable gradient computation
-    inp = transform(pil_img).unsqueeze(0).to(device)
+    inp = transform(pil_img).unsqueeze(0).to(device)  # type: ignore[attr-defined]
     inp.requires_grad = True
     
     # Forward pass and get predictions
+    model_eff = get_osteoporosis_model()
     preds = model_eff(inp)
     _, idx = torch.max(preds, 1)
     
@@ -124,7 +163,7 @@ def compute_saliency(pil_img: Image.Image):
     orig = np.clip(np.transpose(img.detach().numpy(), (1, 2, 0)), 0, 1)
     
     # Create heatmap overlay using matplotlib's hot colormap
-    cmap = plt.cm.hot(sal_map.numpy())[..., :3]
+    cmap = plt.cm.hot(sal_map.numpy())[..., :3]  # type: ignore[attr-defined]
     red = np.clip(cmap[:, :, 0] * 1.5, 0, 1)
     overlay = np.clip(orig + red[:, :, None], 0, 1)
     
@@ -152,7 +191,7 @@ def predict_classifier_model(image_path, model, device, class_names):
         normalize_transform
     ])
     img = Image.open(image_path).convert('RGB')
-    tensor = tf(img).unsqueeze(0).to(device)
+    tensor = tf(img).unsqueeze(0).to(device)  # type: ignore[attr-defined]
     
     with torch.no_grad():
         out = model(tensor)
@@ -164,7 +203,10 @@ def load_detection_model(path=ATHEROMA_DETECTION_MODEL_PATH):
     Load the ONNX Faster R-CNN model for atheroma detection and localization.
     This model can identify specific regions where atheromas are present.
     """
-    sess = onnxruntime.InferenceSession(path, providers=['CPUExecutionProvider'])
+    # Prefer GPU execution if CUDA provider is available
+    available_providers = onnxruntime.get_available_providers()
+    providers = ['CUDAExecutionProvider'] if 'CUDAExecutionProvider' in available_providers else ['CPUExecutionProvider']
+    sess = onnxruntime.InferenceSession(path, providers=providers)
     inp = sess.get_inputs()[0].name
     return sess, inp
 
@@ -243,7 +285,12 @@ def predict_segmentation_model(image_path, model, device,
         pred = pred.sigmoid().cpu().numpy().squeeze()
         pred = (pred - pred.min())/(pred.max()-pred.min()+1e-8)
         binm = (pred>=0.5).astype(np.uint8)
-        resized = Image.fromarray(binm*255).resize((right-left, lower-upper), Image.NEAREST)
+        # Pillow >= 10 moved resampling enums to Image.Resampling
+        try:
+            resample_nearest = Image.Resampling.NEAREST  # type: ignore[attr-defined]
+        except AttributeError:  # Pillow < 10
+            resample_nearest = Image.NEAREST  # type: ignore[attr-defined]
+        resized = Image.fromarray(binm*255).resize((right-left, lower-upper), resample_nearest)
         mask[upper:lower, left:right] = np.array(resized)//255
     
     if save_mask:
@@ -251,19 +298,15 @@ def predict_segmentation_model(image_path, model, device,
     return mask
 
 # Load all atheroma models at startup
-atheroma_classifier_model   = load_classifier_model()
-detection_session, detection_input_name = load_detection_model()
-atheroma_segmentation_model = load_segmentation_model()
+atheroma_classifier_model   = get_atheroma_classifier()
+detection_session, detection_input_name = get_detection_models()
+atheroma_segmentation_model = get_segmentation_model()
 atheroma_class_names = ["Nao_Ateroma", "Ateroma"]
 
 # ---------------- MedGemma Setup ----------------
 # Load the multimodal vision-language model for medical image analysis
-model_med = AutoModelForImageTextToText.from_pretrained(
-    MEDGEMMA_MODEL_ID, cache_dir=CACHE_DIR, torch_dtype=torch.bfloat16
-).to(device)
-proc_med = AutoProcessor.from_pretrained(
-    MEDGEMMA_MODEL_ID, cache_dir=CACHE_DIR
-)
+model_med = get_med_model()
+proc_med = get_med_processor()
 
 # ---------------- Flask Web Application ----------------
 app = Flask(__name__, static_folder='static', static_url_path='/static')
@@ -359,6 +402,7 @@ def index():
     language = 'english'  # Default language
 
     if request.method == 'POST':
+        logger.info("Received POST request for analysis.")
         language = request.form.get('language', 'english')
         prompt = request.form.get('prompt','').strip()
         f      = request.files.get('image')
@@ -373,17 +417,18 @@ def index():
             
             # Generate saliency maps and get osteoporosis prediction
             orig, sal, ovl, idx = compute_saliency(pil_rgb)
-            osteoporosis_diag = diag_sentences[idx]
+            osteoporosis_diag = diag_sentences[int(idx)]
 
             # Step 2: Atheroma Detection Pipeline
-            # Save uploaded image temporarily for processing
-            tmp_path = '/tmp/upload.png'
-            with open(tmp_path,'wb') as tmp:
+            # Save uploaded image temporarily for processing using a unique temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
                 tmp.write(img_bytes)
+                tmp_path = tmp.name
 
             # Run atheroma classifier to determine if atheromas are present
+            ath_clf_model = get_atheroma_classifier()
             raw_pred_ath = predict_classifier_model(
-                tmp_path, atheroma_classifier_model, device, atheroma_class_names
+                tmp_path, ath_clf_model, device, atheroma_class_names
             )
             has_ath = (raw_pred_ath.lower() == "ateroma")
             pred_ath = (
@@ -395,12 +440,14 @@ def index():
             # If atheromas detected, run detection and segmentation
             if has_ath:
                 # Detect bounding boxes around atheromas
+                detection_session, detection_input_name = get_detection_models()
                 boxes, scores, labels_ = predict_detection_model(
                     detection_session, detection_input_name, tmp_path
                 )
                 # Generate segmentation mask
+                seg_model = get_segmentation_model()
                 mask = predict_segmentation_model(
-                    tmp_path, atheroma_segmentation_model, device
+                    tmp_path, seg_model, device
                 )
                 
                 # Visualize results on the image
@@ -619,6 +666,30 @@ def download():
         )
     return ('No report', 404)
 
+# ----------------------------------------------------------------------
+# Image preprocessing transforms (restored)
+# ----------------------------------------------------------------------
+
+# Standard ImageNet normalization for input preprocessing
+normalize_transform = transforms.Normalize(
+    mean=[0.485, 0.456, 0.406],
+    std=[0.229, 0.224, 0.225]
+)
+
+# Inverse normalization for visualization
+inv_normalize_transform = transforms.Normalize(
+    mean=[-0.485/0.229, -0.456/0.224, -0.406/0.255],
+    std=[1/0.229, 1/0.224, 1/0.255]
+)
+
+# Complete transformation pipeline for input images
+transform = transforms.Compose([
+    transforms.Resize(RESIZE),
+    transforms.ToTensor(),
+    normalize_transform
+])
+
 if __name__ == '__main__':
+    logger.info("Starting GigaXReport Flask server on http://0.0.0.0:5000 ...")
     # Start the Flask development server
     app.run(host='0.0.0.0', port=5000)
