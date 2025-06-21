@@ -15,7 +15,7 @@
 
 **This project is a key component of GigaSistêmica, a collaborative initiative between GigaCandanga and the University of Brasília. GigaSistêmica aims to revolutionize diagnostic and predictive capabilities for systemic diseases through the integration of AI and medical imaging technologies.**
 
-🔗 **Main Project Repository**: [GigaSistêmica – Advancing Systemic Health Diagnostics through AI](https://github.com/BrunoScholles98/GigaSistematica-Advancing-Systemic-Health-Diagnostics-through-AI)
+🔗 **Main Project Repository**: [GigaSistêmica – Advancing Systemic Health Diagnostics through AI](https://github.com/BrunoScholles98/GigaSistemica-Advancing-Systemic-Health-Diagnostics-through-AI)
 
 ---
 
