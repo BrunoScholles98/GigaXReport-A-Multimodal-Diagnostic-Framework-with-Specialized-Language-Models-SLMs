@@ -91,7 +91,7 @@ The trained AI models used in this framework (e.g., MedGemma, EfficientNet, Fast
 <a name="contact"></a>
 ## Contact
 
-Please feel free to reach out with any comments, questions, reports, or suggestions via email at [brunoscholles98@gmail.com](mailto:brunoscholles98@gmail.com) or [matheusvirgiliomcp@gmail.com](mailto:matheusvirgiliomcp@gmail.com).  Additionally, you can contact me via WhatsApp at +351 913 686 499.
+Please feel free to reach out with any comments, questions, reports, or suggestions via email at [brunoscholles98@gmail.com](mailto:brunoscholles98@gmail.com) or [matheusvirgiliomcp@gmail.com](mailto:matheusvirgiliomcp@gmail.com).  Additionally, you can contact us via WhatsApp at +351 913 686 499 or +55 61 98275-5573.
 
 ---
 
