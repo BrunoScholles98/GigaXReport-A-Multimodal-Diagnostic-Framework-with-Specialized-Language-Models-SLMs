@@ -98,7 +98,6 @@ Please feel free to reach out with any comments, questions, reports, or suggesti
 <a name="thanks"></a>
 ## Thanks
 
-Special thanks to my advisors Mylene C. Q. Farias, André Ferreira Leite, and Nilce Santos de Melo.  
-Also, a special thanks to my colleague Matheus Virgílio.
+Special thanks to my advisors Mylene C. Q. Farias, André Ferreira Leite, and Nilce Santos de Melo.
 
 ---
