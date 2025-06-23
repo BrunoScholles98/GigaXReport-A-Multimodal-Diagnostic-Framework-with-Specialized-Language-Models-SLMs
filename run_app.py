@@ -26,6 +26,7 @@ from transformers import AutoProcessor, AutoModelForImageTextToText
 from cv2_rolling_ball import subtract_background_rolling_ball
 import timm.models.fastvit as fv
 from functools import lru_cache
+from peft import PeftModel
 
 # Fix for FastViT compatibility - some versions don't have the 'se' attribute
 # mypy/pylance may complain about dynamic attribute creation; suppress type warning.
@@ -39,7 +40,9 @@ os.environ["TORCHDYNAMO_DISABLE"] = "1"
 # Path to the trained EfficientNet model for osteoporosis classification
 OSTEO_MODEL_PATH = '/mnt/nas/BrunoScholles/Gigasistemica/Models/efficientnet-b7_FULL_IMG_C1_C3.pth'
 # MedGemma model identifier for medical image analysis
-MEDGEMMA_MODEL_ID = 'google/medgemma-4b-it'
+MEDGEMMA_MODEL_ID = '/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma/cache/models--google--medgemma-4b-it/snapshots/698f7911b8e0569ff4ebac5d5552f02a9553063c'
+# Path to the fine-tuned LoRA adapter
+ADAPTER_MODEL_PATH = '/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_GigaTrained'
 # Directory to cache the MedGemma model
 CACHE_DIR = '/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma/cache'
 
@@ -94,9 +97,17 @@ def get_osteoporosis_model():
 def get_med_model():
     """Load MedGemma model on first use."""
     logger.info("Loading MedGemma vision-language model ...")
-    return AutoModelForImageTextToText.from_pretrained(
-        MEDGEMMA_MODEL_ID, cache_dir=CACHE_DIR, torch_dtype=torch.bfloat16
-    ).to(device)
+    base_model = AutoModelForImageTextToText.from_pretrained(
+        MEDGEMMA_MODEL_ID,
+        torch_dtype=torch.bfloat16,
+        device_map={"": "cpu"}
+    )
+    logger.info(f"Loading LoRA adapter from {ADAPTER_MODEL_PATH} ...")
+    model = PeftModel.from_pretrained(base_model, ADAPTER_MODEL_PATH)
+    logger.info("Moving model to device ...")
+    model = model.to(device)
+    logger.info("MedGemma model and adapter loaded.")
+    return model
 
 @lru_cache(maxsize=1)
 def get_med_processor():
@@ -517,41 +528,18 @@ def index():
             combined_pil = Image.open(BytesIO(combined_data)).convert('RGB')
             
             # Define system text based on selected language
+            has_osteo = (idx == 1)
             if language == 'portuguese':
-                sys_txt = ("Você é um radiologista especialista. "
-                          "O diagnóstico do modelo EfficientNet para osteoporose é exatamente "
-                          f"\"{osteoporosis_diag}\", e o diagnóstico do pipeline de ateroma é exatamente "
-                          f"\"{pred_ath}\". Essas saídas dos modelos devem aparecer literalmente no seu relatório nas "
-                          "seções \"Saúde Óssea\" e \"Diagnóstico de Ateroma\". Você deve explicar por que essas "
-                          "classificações podem ter ocorrido, baseado em indicadores radiológicos comuns. "
-                          "Linha superior da imagem: esquerda = original, direita = sobreposição grad-cam apenas para osteoporose. "
-                          "Linha inferior: segmentação/detecção apenas para ateromas (se disponível). "
-                          "Se a classificação de ateroma for positiva mas nenhuma detecção/segmentação foi possível, "
-                          "deixe claro que o modelo classificou como tal mas não foi capaz de localizar nenhuma placa. "
-                          "Sua resposta deve cobrir: Impressão Geral, Estrutura Óssea, Saúde Óssea, "
-                          "Diagnóstico de Ateroma, Detecção/Segmentação de Ateroma e Resumo. Seja detalhado, medicamente correto, "
-                          "e descreva a imagem de entrada. Não se esqueça de descrever a detecção/segmentação na imagem (se houver)."
-                          "Não coloque Paciente, Data, Exame ou similar na sua resposta."
-                          "Não fale sobre os dentes na sua resposta. Além disso, você deve obedecer ao que o usuário pede."
-                          "Se eles pedirem um relatório em um idioma específico ou em um formato específico, você deve responder nesse idioma ou formato."
+                sys_txt_template = "Você é um radiologista especialista. Estas são imagens de radiografia processadas pelas redes EfficientNet, FastViT, FasterCNN e UNet. Sua tarefa é analisar essas imagens fornecidas e fornecer um relatório detalhado, estruturado e medicamente preciso com base na solicitação do usuário. Este paciente tem indicações de Ateroma: {atheroma} e Osteoporose: {osteo}."
+                sys_txt = sys_txt_template.format(
+                    atheroma=str(has_ath),
+                    osteo=str(has_osteo)
                 )
             else:  # English (default)
-                sys_txt = ("You are an expert radiologist. "
-                          "The diagnosis from the EfficientNet osteoporosis model is exactly "
-                          f"\"{osteoporosis_diag}\", and the diagnosis from the atheroma pipeline is exactly "
-                          f"\"{pred_ath}\". These model outputs must appear verbatim in your report under "
-                          "the sections \"Bone Health\" and \"Atheroma Diagnosis\". You must explain why these "
-                          "classifications might have occurred, based on common radiological indicators. "
-                          "Top row of the image: left = original, right = grad-cam overlay just for osteoporosis. "
-                          "Bottom row: segmentation/detection just for atheromas (if available). "
-                          "If the atheroma classification is positive but no detection/segmentation was possible, "
-                          "make clear that the model classified it as such but was unable to localize any plaque. "
-                          "Your response should cover: General Impression, Bone Structure, Bone Health, "
-                          "Atheroma Diagnosis, Atheroma Detection/Segmentation and Summary. Be detailed, medically sound, "
-                          "and describe the input image. Don't forget to describe the detection/segmentation in the image (if it has)."
-                          "Do not put Patient, Date, Exam or similar in your response."
-                          "Do not talk about the teeth in your response. Also, you must obay what the user asks for."
-                          "If they ask for a report in a specific language or in a specific format, you must respond in that language or format."
+                sys_txt_template = "You are an expert radiologist. These are radiographic images processed by the EfficientNet, FastViT, FasterCNN, and UNet networks. Your task is to analyze these provided images and provide a detailed, structured, and medically accurate report based on the user's request. This patient has indications of Atheroma: {atheroma} and Osteoporosis: {osteo}."
+                sys_txt = sys_txt_template.format(
+                    atheroma=str(has_ath),
+                    osteo=str(has_osteo)
                 )
             
             # Prepare messages for MedGemma

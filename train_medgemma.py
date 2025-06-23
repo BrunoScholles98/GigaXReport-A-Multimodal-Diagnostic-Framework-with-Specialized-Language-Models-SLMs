@@ -18,8 +18,8 @@ from peft import LoraConfig, get_peft_model
 # Path to local base model.
 model_name = "/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma/cache/models--google--medgemma-4b-it/snapshots/698f7911b8e0569ff4ebac5d5552f02a9553063c"
 # Path to training data (JSON).
-dataset_path = "/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_TrainScript/test_dataset.json"  # IMPORTANT: Update this path
-output_model_dir = "/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_TrainScript"
+dataset_path = "/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_GigaTrained/training_dataset.json"  # IMPORTANT: Update this path
+output_model_dir = "/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_GigaTrained"
 # Max model input sequence length.
 max_seq_length = 2048
 
@@ -71,15 +71,27 @@ model.print_trainable_parameters()
 def preprocess_data(example: Dict[str, Any]) -> Optional[Dict[str, torch.Tensor]]:
     try:
         image = Image.open(example["image_path"]).convert("RGB")
-        # System prompt to guide model generation.
-        system_prompt = "You are an expert radiologist. Your task is to analyze the provided medical image and generate a detailed, structured, and medically accurate report based on the user's request."
+        
+        lang = example.get("language", "en")  # Default to English
+
+        if lang == "pt":
+            system_prompt_template = "Você é um radiologista especialista. Estas são imagens de radiografia processadas pelas redes EfficientNet, FastViT, FasterCNN e UNet. Sua tarefa é analisar essas imagens fornecidas e fornecer um relatório detalhado, estruturado e medicamente preciso com base na solicitação do usuário. Este paciente tem indicações de Ateroma: {atheroma} e Osteoporose: {osteo}."
+            user_prompt_text = "Analise e descreva os resultados extraídos desta imagem fornecida."
+        else:  # Default to English
+            system_prompt_template = "You are an expert radiologist. These are radiographic images processed by the EfficientNet, FastViT, FasterCNN, and UNet networks. Your task is to analyze these provided images and provide a detailed, structured, and medically accurate report based on the user's request. This patient has indications of Atheroma: {atheroma} and Osteoporosis: {osteo}."
+            user_prompt_text = "Analyze and describe the results extracted from this provided image."
+
+        system_prompt = system_prompt_template.format(
+            atheroma=example['atheroma'], 
+            osteo=example['osteo']
+        )
         # Chat-formatted input for the model.
         messages = [
             {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Analyze this medical image and provide a detailed description."},
+                    {"type": "text", "text": user_prompt_text},
                     {"type": "image", "image": image},
                 ]
             },
