@@ -38,6 +38,8 @@ result_text = {
     "Result1": "the patient has osteoporosis"
 }.get(result_code, "diagnosis unknown")
 
+#TODO: Use the generic_diagnosis_prompt.txt to generate the prompt
+
 # Build the multimodal chat messages with detailed‐description prompt:
 messages = [
     {"role": "system", "content": [{"type": "text", "text": "You are an expert radiologist."}]},
