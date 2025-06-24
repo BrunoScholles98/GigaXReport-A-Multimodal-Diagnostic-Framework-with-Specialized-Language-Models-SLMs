@@ -50,8 +50,8 @@ messages = [
     {"role": "user",   "content": [
         {"type": "text", "text":
             f"The EfficientNet classification for this X-ray is: {result_text}. "
-            "Based on this classification, please provide a detailed description of the bone structure and bone health observed in the image. "
-            f"Please follow this diagnosis template:\n\n{diagnosis_template}"
+            "Based on this classification, please provide a detailed descrisption of the bone structure and bone health observed in the image. "
+            f"Please follow this diagnosis template:\n\n{diagnosis_template}" #Comment this line to not use the template
         },
         {"type": "image", "image": image}
     ]}
