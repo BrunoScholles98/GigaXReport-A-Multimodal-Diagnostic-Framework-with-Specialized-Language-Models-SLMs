@@ -41,12 +41,17 @@ result_text = {
 #TODO: Use the generic_diagnosis_prompt.txt to generate the prompt
 
 # Build the multimodal chat messages with detailed‐description prompt:
+# Load the diagnosis template
+with open("prompt/generic_diagnosis_template.txt", "r") as f:
+    diagnosis_template = f.read()
+
 messages = [
     {"role": "system", "content": [{"type": "text", "text": "You are an expert radiologist."}]},
     {"role": "user",   "content": [
         {"type": "text", "text":
             f"The EfficientNet classification for this X-ray is: {result_text}. "
-            "Based on this classification, please provide a detailed description of the bone structure and bone health observed in the image."
+            "Based on this classification, please provide a detailed description of the bone structure and bone health observed in the image. "
+            f"Please follow this diagnosis template:\n\n{diagnosis_template}"
         },
         {"type": "image", "image": image}
     ]}
