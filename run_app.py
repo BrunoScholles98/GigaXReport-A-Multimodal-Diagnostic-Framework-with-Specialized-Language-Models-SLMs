@@ -1,3 +1,5 @@
+# CUDA_VISIBLE_DEVICES=1 python /mnt/nas/BrunoScholles/Gigasistemica/GigaXReport-A-Multimodal-Diagnostic-Framework-with-Specialized-Language-Models-SLMs/run_app.py
+
 import os
 import re
 import json
@@ -17,16 +19,13 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from PIL import Image
 from flask import Flask, request, render_template_string, send_file, url_for
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase.pdfmetrics import stringWidth
 from transformers import AutoProcessor, AutoModelForImageTextToText
 from cv2_rolling_ball import subtract_background_rolling_ball
 import timm.models.fastvit as fv
 from functools import lru_cache
 from peft import PeftModel
+
+from utils.pdf_generator import generate_pdf_report
 
 # Fix for FastViT compatibility - some versions don't have the 'se' attribute
 # mypy/pylance may complain about dynamic attribute creation; suppress type warning.
@@ -527,6 +526,21 @@ def index():
             # Prepare the combined image for MedGemma
             combined_pil = Image.open(BytesIO(combined_data)).convert('RGB')
             
+            # Load diagnosis template and append to prompt
+            template_path = os.path.join(app.root_path, 'prompt', 'generic_diagnosis_template.txt')
+            if os.path.exists(template_path):
+                with open(template_path, 'r') as f:
+                    diagnosis_template = f.read()
+                
+                if language == 'portuguese':
+                    template_instruction = f"\\n\\nPor favor, siga este modelo de diagnóstico:\\n\\n{diagnosis_template}"
+                else: # English
+                    template_instruction = f"\\n\\nPlease follow this diagnosis template:\\n\\n{diagnosis_template}"
+                
+                prompt += template_instruction
+            else:
+                logger.warning(f"Diagnosis template not found at {template_path}")
+
             # Define system text based on selected language
             has_osteo = (idx == 1)
             if language == 'portuguese':
@@ -564,70 +578,9 @@ def index():
 
             # Step 5: PDF Report Generation
             # Create a professional PDF report with the results
-            buf_pdf = BytesIO()
-            c = canvas.Canvas(buf_pdf, pagesize=letter)
-            w,h = letter
-            
-            # Add company logo to PDF
-            logo_p = os.path.join(app.root_path, 'static', PDF_LOGO_FILENAME)
-            disp_h = 0
-            if os.path.exists(logo_p):
-                img_l = Image.open(logo_p)
-                lw,lh = img_l.size
-                dw=150; dh=int(dw*(lh/lw))
-                c.drawInlineImage(img_l,50,h-dh-20,width=dw,height=dh)
-                disp_h = dh
-            
-            # Add the combined analysis image
-            pw,ph = combined_pil.size
-            pw_pdf = 450
-            ph_pdf = int(pw_pdf * (ph/pw))
-            y0 = h - (disp_h+40) - ph_pdf
-            c.drawInlineImage(combined_pil,50,y0,width=pw_pdf,height=ph_pdf)
-            
-            # Register fonts for text formatting
-            try:
-                pdfmetrics.registerFont(TTFont('Helvetica-Bold','Helvetica-Bold.ttf'))
-            except:
-                pass
-            
-            # Process and format the MedGemma response for PDF
-            clean = re.sub(r'(?<!\*)\*(?!\*)','-', result)
-            paras = clean.split('\n')
-            
-            def segs(line):
-                """Split text into segments for bold formatting"""
-                parts = re.split(r'(\*\*[^*]+\*\*)', line)
-                out = []
-                for p in parts:
-                    if p.startswith('**') and p.endswith('**'):
-                        out.append((p[2:-2], True))
-                    else:
-                        out.append((p, False))
-                return out
-            
-            # Add formatted text to PDF
-            txt = c.beginText(50, y0-20)
-            txt.setLeading(12)
-            for para in paras:
-                if not para.strip():
-                    txt.textLine(''); continue
-                curr_w = 0
-                for seg, bold in segs(para):
-                    font = 'Helvetica-Bold' if bold else 'Helvetica'
-                    for tok in re.split(r'(\s+)', seg):
-                        if not tok: continue
-                        tw = stringWidth(tok, font, 8)
-                        if curr_w + tw > 500 and tok.strip():
-                            txt.textLine(''); curr_w = 0
-                        txt.setFont(font, 8)
-                        txt.textOut(tok)
-                        curr_w += tw
-                txt.textLine('')
-            c.drawText(txt)
-            c.showPage(); c.save()
-            buf_pdf.seek(0)
-            last_report = buf_pdf.read()
+            last_report = generate_pdf_report(
+                combined_pil, result, os.path.join(app.root_path, 'static'), PDF_LOGO_FILENAME
+            )
             pdf_ready = True
 
     return render_template_string(
