@@ -41,7 +41,7 @@ OSTEO_MODEL_PATH = '/mnt/nas/BrunoScholles/Gigasistemica/Models/efficientnet-b7_
 # MedGemma model identifier for medical image analysis
 MEDGEMMA_MODEL_ID = '/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma/cache/models--google--medgemma-4b-it/snapshots/698f7911b8e0569ff4ebac5d5552f02a9553063c'
 # Path to the fine-tuned LoRA adapter
-ADAPTER_MODEL_PATH = '/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_GigaTrained'
+ADAPTER_MODEL_PATH = '/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_GigaV2'
 # Directory to cache the MedGemma model
 CACHE_DIR = '/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma/cache'
 
@@ -172,12 +172,17 @@ def compute_saliency(pil_img: Image.Image):
     img = inv_normalize_transform(inp[0].cpu())
     orig = np.clip(np.transpose(img.detach().numpy(), (1, 2, 0)), 0, 1)
     
-    # Create heatmap overlay using matplotlib's hot colormap
-    cmap = plt.cm.hot(sal_map.numpy())[..., :3]  # type: ignore[attr-defined]
-    red = np.clip(cmap[:, :, 0] * 1.5, 0, 1)
-    overlay = np.clip(orig + red[:, :, None], 0, 1)
+    # Create a red heatmap overlay
+    cmap = plt.get_cmap('hot')(sal_map.numpy())
+    red = cmap[:, :, 0] * 1.5
+    red = np.where(red < 0.3, 0, red)
+
+    # Create a red overlay instead of a white one
+    red_overlay = np.zeros_like(orig)
+    red_overlay[:,:,0] = red
+    overlay = np.clip(orig + red_overlay, 0, 1)
     
-    return orig, cmap, overlay, idx.item()
+    return overlay, idx.item()
 
 # ---------------- Atheroma Pipeline Functions ----------------
 def load_classifier_model(path=ATHEROMA_CLASSIFIER_PATH):
@@ -426,7 +431,7 @@ def index():
             pil_rgb = Image.fromarray(bg.astype('uint8'), 'L').convert('RGB')
             
             # Generate saliency maps and get osteoporosis prediction
-            orig, sal, ovl, idx = compute_saliency(pil_rgb)
+            overlay, idx = compute_saliency(pil_rgb)
             osteoporosis_diag = diag_sentences[int(idx)]
 
             # Step 2: Atheroma Detection Pipeline
@@ -480,27 +485,42 @@ def index():
                 )
 
             # Step 3: Create Combined Visualization
-            # Generate a compact plot showing all analysis results
-            fig = plt.figure(figsize=(12, 6))
-            gs  = gridspec.GridSpec(
-                2, 2,
-                height_ratios=[1, 1],
-                hspace=0      # Minimal vertical spacing
-            )
-            ax0 = fig.add_subplot(gs[0, 0])  # Original image
-            ax1 = fig.add_subplot(gs[0, 1])  # Grad-CAM overlay
-            ax2 = fig.add_subplot(gs[1, :])  # Atheroma detection/segmentation
+            # Create a vertically stacked image with Grad-CAM overlay and atheroma analysis.
 
-            # Top row: original and overlay without titles
-            ax0.imshow(orig)
-            ax0.axis('off')
+            # The overlay is a float array (0-1), convert to uint8
+            img_overlay = (overlay * 255).astype(np.uint8)
 
-            ax1.imshow(ovl)
+            # Resize atheroma image to match the overlay's width, preserving aspect ratio.
+            overlay_h, overlay_w, _ = img_overlay.shape
+            ath_h, ath_w, _ = detection_img.shape
+            
+            new_ath_w = overlay_w
+            new_ath_h = int(ath_h * (new_ath_w / ath_w))
+            
+            resized_ath_img = cv2.resize(detection_img, (new_ath_w, new_ath_h), interpolation=cv2.INTER_AREA)
+
+            # Create figure
+            dpi = 300
+            gap_px = 10
+            
+            fig_height_px = overlay_h + new_ath_h + gap_px
+            fig_width_in = overlay_w / dpi
+            fig_height_in = fig_height_px / dpi
+
+            fig = plt.figure(figsize=(fig_width_in, fig_height_in), dpi=dpi)
+            
+            # Manually place axes to control gap precisely
+            ax1_h_norm = overlay_h / fig_height_px
+            ax1_y_norm = (new_ath_h + gap_px) / fig_height_px
+            ax1 = fig.add_axes((0, ax1_y_norm, 1, ax1_h_norm))
+            ax1.imshow(img_overlay)
             ax1.axis('off')
 
-            # Bottom row: atheroma detection results
-            ax2.imshow(detection_img)
+            ax2_h_norm = new_ath_h / fig_height_px
+            ax2 = fig.add_axes((0, 0, 1, ax2_h_norm))
+            ax2.imshow(resized_ath_img)
             ax2.axis('off')
+
             if not has_ath:
                 ax2.text(
                     0.5, 0.5, 'NO CACS DETECTED',
@@ -508,15 +528,10 @@ def index():
                     color='red', fontsize=20,
                     ha='center', va='center'
                 )
-
+            
             # Save combined visualization
-            fig.subplots_adjust(hspace=0)
             buf = BytesIO()
-            fig.savefig(
-                buf, format='png',
-                bbox_inches='tight', pad_inches=0,
-                dpi=300
-            )
+            fig.savefig(buf, format='png', dpi=dpi, pad_inches=0)
             plt.close(fig)
             buf.seek(0)
             combined_data = buf.getvalue()
@@ -527,7 +542,7 @@ def index():
             combined_pil = Image.open(BytesIO(combined_data)).convert('RGB')
             
             # Load diagnosis template and append to prompt
-            template_path = os.path.join(app.root_path, 'prompt', 'generic_diagnosis_template.txt')
+            template_path = os.path.join(app.root_path, 'prompt', 'generic_diagnostic_template.txt')
             if os.path.exists(template_path):
                 with open(template_path, 'r') as f:
                     diagnosis_template = f.read()

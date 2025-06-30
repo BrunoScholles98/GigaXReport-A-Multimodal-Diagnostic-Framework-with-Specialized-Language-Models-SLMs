@@ -18,8 +18,8 @@ from peft import LoraConfig, get_peft_model
 # Path to local base model.
 model_name = "/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma/cache/models--google--medgemma-4b-it/snapshots/698f7911b8e0569ff4ebac5d5552f02a9553063c"
 # Path to training data (JSON).
-dataset_path = "/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_GigaTrained/training_dataset.json"  # IMPORTANT: Update this path
-output_model_dir = "/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_GigaTrained"
+dataset_path = "/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_GigaV2/training_dataset_gigav2.json"  # IMPORTANT: Update this path
+output_model_dir = "/mnt/nas/BrunoScholles/Gigasistemica/Models/MedGemma_GigaV2"
 # Max model input sequence length.
 max_seq_length = 2048
 
